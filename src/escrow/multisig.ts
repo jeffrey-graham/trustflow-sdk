@@ -461,6 +461,12 @@ export class MultiSigEscrowClient {
     if (typeof snapshot.threshold !== 'number' || snapshot.threshold < 1) {
       return { ok: false, error: 'snapshot.threshold must be a number >= 1' };
     }
+    if (!VALID_MULTISIG_OPERATION_TYPES.includes(snapshot.operationType)) {
+      return {
+        ok: false,
+        error: `snapshot.operationType must be one of: ${VALID_MULTISIG_OPERATION_TYPES.join(', ')}`,
+      };
+    }
     const validStatuses: MultiSigOperationStatus[] = ['pending', 'ready', 'submitted', 'expired'];
     if (!validStatuses.includes(snapshot.status)) {
       return { ok: false, error: `snapshot.status must be one of: ${validStatuses.join(', ')}` };

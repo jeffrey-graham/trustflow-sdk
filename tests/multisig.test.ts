@@ -955,6 +955,7 @@ describe('MultiSigEscrowClient against the real client', () => {
       ['signers not an array', 'snapshot.signers must be an array'],
       ['collectedSignatures not an array', 'snapshot.collectedSignatures must be an array'],
       ['threshold below 1', 'snapshot.threshold must be a number >= 1'],
+      ['bad operationType', 'snapshot.operationType must be one of: release, cancel, dispute'],
       ['bad status', 'snapshot.status must be one of: pending, ready, submitted, expired'],
     ])('rejects a snapshot with %s', (_case, error) => {
       const client = makeClient();
@@ -977,6 +978,7 @@ describe('MultiSigEscrowClient against the real client', () => {
       if (_case === 'signers not an array') corrupted.signers = 'nope';
       if (_case === 'collectedSignatures not an array') corrupted.collectedSignatures = 'nope';
       if (_case === 'threshold below 1') corrupted.threshold = 0;
+      if (_case === 'bad operationType') corrupted.operationType = 'arbitrary';
       if (_case === 'bad status') corrupted.status = 'unknown';
 
       expect(client.importState(corrupted as unknown as MultiSigStateSnapshot)).toEqual({
