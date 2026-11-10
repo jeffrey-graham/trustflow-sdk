@@ -28,6 +28,8 @@ export interface InvokeContractParams {
 export interface ContractCallResult {
   success: boolean;
   returnValue?: unknown;
+  /** Raw Soroban `ScVal` return value when available from simulation. */
+  rawReturnValue?: unknown;
   txHash?: string;
   errorCode?: number;
   gasUsed?: number;

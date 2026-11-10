@@ -84,8 +84,11 @@ export class SorobanContractClient extends AbstractContractClient {
     const scVals = this.encodeArgs(methodName, args);
     const result = await invokeContract(this.client, methodName, scVals, caller, signAndSubmit);
     let decoded: T | undefined = undefined;
-    if (result.success && result.returnValue) {
-      decoded = this.decodeReturnValue(methodName, result.returnValue as xdr.ScVal) as T;
+    if (result.success) {
+      const rawPayload = result.rawReturnValue ?? result.returnValue;
+      if (rawPayload !== undefined) {
+        decoded = this.decodeOutcomeValue(methodName, rawPayload) as T;
+      }
     }
     return {
       ...result,
@@ -105,13 +108,163 @@ export class SorobanContractClient extends AbstractContractClient {
   ): Promise<T> {
     const scVals = this.encodeArgs(methodName, args);
     const rawResult = await readContractState(this.client, methodName, scVals);
-    if (rawResult && typeof rawResult === 'object' && 'result' in (rawResult as any)) {
-      const retval = (rawResult as any).result?.retval;
-      if (retval) {
-        return this.decodeReturnValue(methodName, retval as xdr.ScVal) as T;
+    if (
+      rawResult &&
+      typeof rawResult === 'object' &&
+      'result' in (rawResult as Record<string, unknown>) &&
+      (rawResult as { result?: { retval?: unknown } }).result?.retval !== undefined
+    ) {
+      return this.decodeOutcomeValue(
+        methodName,
+        (rawResult as { result: { retval: unknown } }).result.retval,
+      ) as T;
+    }
+    return this.decodeOutcomeValue(methodName, rawResult) as T;
+  }
+
+  private decodeOutcomeValue(methodName: string, rawOrNative: unknown): unknown {
+    if (rawOrNative === undefined) return undefined;
+    if (
+      isScValLike(rawOrNative) ||
+      rawOrNative instanceof Uint8Array ||
+      Buffer.isBuffer(rawOrNative)
+    ) {
+      return this.decodeReturnValue(methodName, rawOrNative as xdr.ScVal);
+    }
+
+    const fnSpec = this.spec.getFunction(methodName);
+    if (!fnSpec || fnSpec.outputs.length === 0) {
+      return rawOrNative === null ? null : rawOrNative;
+    }
+
+    const outputType = fnSpec.outputs[0];
+    const kind = outputType.switch().name;
+    if (
+      typeof rawOrNative === 'string' &&
+      kind !== 'scSpecTypeString' &&
+      kind !== 'scSpecTypeSymbol' &&
+      kind !== 'scSpecTypeAddress'
+    ) {
+      try {
+        const parsed = this.spec.parseXDRPayload(rawOrNative);
+        return this.decodeReturnValue(methodName, parsed);
+      } catch {
+        // Fall through to native-to-spec normalization
       }
     }
-    return rawResult as T;
+
+    const normalized = this.normalizeNativeForSpec(rawOrNative, outputType);
+    const scVal = this.spec.valToScVal(normalized, outputType, `return.${methodName}`);
+    return this.decodeReturnValue(methodName, scVal);
+  }
+
+  private normalizeNativeForSpec(val: unknown, typeDef: xdr.ScSpecTypeDef): unknown {
+    if (val === null || val === undefined) return val;
+    const kind = typeDef.switch().name;
+
+    switch (kind) {
+      case 'scSpecTypeOption':
+        return this.normalizeNativeForSpec(val, typeDef.option().valueType());
+      case 'scSpecTypeVec':
+        if (Array.isArray(val)) {
+          const elemType = typeDef.vec().elementType();
+          return val.map((item) => this.normalizeNativeForSpec(item, elemType));
+        }
+        return val;
+      case 'scSpecTypeTuple':
+        if (Array.isArray(val)) {
+          const types = typeDef.tuple().valueTypes();
+          return val.map((item, idx) =>
+            types[idx] ? this.normalizeNativeForSpec(item, types[idx]) : item,
+          );
+        }
+        return val;
+      case 'scSpecTypeMap':
+        if (val instanceof Map) {
+          const keyType = typeDef.map().keyType();
+          const valType = typeDef.map().valueType();
+          const next = new Map();
+          for (const [k, v] of val.entries()) {
+            next.set(
+              this.normalizeNativeForSpec(k, keyType),
+              this.normalizeNativeForSpec(v, valType),
+            );
+          }
+          return next;
+        }
+        if (typeof val === 'object' && !Array.isArray(val)) {
+          const valType = typeDef.map().valueType();
+          const out: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+            out[k] = this.normalizeNativeForSpec(v, valType);
+          }
+          return out;
+        }
+        return val;
+      case 'scSpecTypeUdt': {
+        const udtName = typeDef.udt().name().toString();
+        const unionSpec = this.spec.unions.get(udtName);
+        if (unionSpec) {
+          if (Array.isArray(val) && typeof val[0] === 'string') {
+            const tag = val[0];
+            const caseSpec = unionSpec.cases.find((c) => c.name === tag);
+            if (!caseSpec?.typeList || caseSpec.typeList.length === 0) {
+              return { tag };
+            }
+            return {
+              tag,
+              values: val
+                .slice(1)
+                .map((item, idx) =>
+                  caseSpec.typeList![idx]
+                    ? this.normalizeNativeForSpec(item, caseSpec.typeList![idx])
+                    : item,
+                ),
+            };
+          }
+          if (typeof val === 'object' && !Array.isArray(val) && 'tag' in val) {
+            const tag = (val as { tag: string }).tag;
+            const caseSpec = unionSpec.cases.find((c) => c.name === tag);
+            const rawValues = (val as { values?: unknown[] }).values;
+            if (caseSpec?.typeList && Array.isArray(rawValues)) {
+              return {
+                tag,
+                values: rawValues.map((item, idx) =>
+                  caseSpec.typeList![idx]
+                    ? this.normalizeNativeForSpec(item, caseSpec.typeList![idx])
+                    : item,
+                ),
+              };
+            }
+          }
+          return val;
+        }
+        const structSpec = this.spec.structs.get(udtName);
+        if (structSpec) {
+          const isTuple = structSpec.fields.every((f, i) => f.name === String(i));
+          if (isTuple && Array.isArray(val)) {
+            return val.map((item, idx) =>
+              structSpec.fields[idx]
+                ? this.normalizeNativeForSpec(item, structSpec.fields[idx].type)
+                : item,
+            );
+          }
+          if (typeof val === 'object' && !Array.isArray(val)) {
+            const record = val as Record<string, unknown>;
+            const out: Record<string, unknown> = {};
+            for (const field of structSpec.fields) {
+              if (field.name in record) {
+                out[field.name] = this.normalizeNativeForSpec(record[field.name], field.type);
+              }
+            }
+            return out;
+          }
+        }
+        return val;
+      }
+      default:
+        return val;
+    }
   }
 
   /**
@@ -340,6 +493,15 @@ function mapScSpecTypeToTs(typeDef: xdr.ScSpecTypeDef): string {
     default:
       return 'unknown';
   }
+}
+
+function isScValLike(value: unknown): value is xdr.ScVal {
+  return (
+    value instanceof xdr.ScVal ||
+    (typeof value === 'object' &&
+      value !== null &&
+      typeof (value as { switch?: unknown }).switch === 'function')
+  );
 }
 
 function toCamelCase(str: string): string {

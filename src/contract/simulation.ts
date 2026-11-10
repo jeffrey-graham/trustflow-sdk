@@ -1,4 +1,4 @@
-import { rpc, Transaction, scValToNative } from '@stellar/stellar-sdk';
+import { rpc, Transaction, scValToNative, xdr } from '@stellar/stellar-sdk';
 import { TrustFlowError } from '../errors';
 import { withTransientRetry } from '../utils/node-retry';
 import { describeError, logger } from '../utils/logger';
@@ -17,6 +17,8 @@ export interface SimulationOutcome {
   success: boolean;
   cost: { cpuInsns: string; memBytes: string };
   returnValue?: unknown;
+  /** Raw Soroban `ScVal` return value before generic `scValToNative` conversion. */
+  rawReturnValue?: xdr.ScVal;
   error?: string;
   /** True when the simulation needs expired ledger entries restored before it can succeed. */
   needsRestore?: boolean;
@@ -106,6 +108,7 @@ export async function simulateTransaction(
         memBytes: String(cost.memBytes ?? '0'),
       },
       returnValue: retval ? scValToNative(retval) : undefined,
+      rawReturnValue: retval,
       minResourceFee: result.minResourceFee,
       transactionData: result.transactionData,
       response: result,

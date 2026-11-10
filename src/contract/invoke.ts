@@ -128,6 +128,7 @@ export async function invokeContract(
       return {
         success: true,
         returnValue: simulation.returnValue,
+        rawReturnValue: simulation.rawReturnValue,
         gasUsed,
       };
     }
@@ -154,6 +155,7 @@ export async function invokeContract(
       success: true,
       txHash,
       returnValue: simulation.returnValue,
+      rawReturnValue: simulation.rawReturnValue,
       gasUsed,
     };
   } catch (e) {
