@@ -62,14 +62,43 @@ describe('SDKLogger level filtering', () => {
     log.info('request', {
       Authorization: 'Bearer secret',
       apiKey: 'super-secret',
-      nested: { token: 'abc', safe: 'ok' },
+      privateKey: 'S...',
+      key: 'raw-key',
+      nested: { token: 'abc', secretKey: 'xyz', safe: 'ok' },
     });
     expect(infoSpy).toHaveBeenCalledTimes(1);
     const context = infoSpy.mock.calls[0][1] as Record<string, unknown>;
     expect(context['Authorization']).toBe('[REDACTED]');
     expect(context['apiKey']).toBe('[REDACTED]');
+    expect(context['privateKey']).toBe('[REDACTED]');
+    expect(context['key']).toBe('[REDACTED]');
     expect((context['nested'] as Record<string, unknown>)['token']).toBe('[REDACTED]');
+    expect((context['nested'] as Record<string, unknown>)['secretKey']).toBe('[REDACTED]');
     expect((context['nested'] as Record<string, unknown>)['safe']).toBe('ok');
+  });
+
+  it('preserves non-secret fields containing "key" such as publicKey (#581)', () => {
+    const log = new SDKLogger({ minLevel: 'debug' });
+    log.info('signer check', {
+      publicKey: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+      pubKey: 'GABC...',
+      signerPublicKey: 'GDEF...',
+      keypair: 'kp-1',
+      idempotencyKey: 'idem-123',
+      nested: {
+        public_key: 'GXYZ...',
+        api_key: 'secret-api-key',
+      },
+    });
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const context = infoSpy.mock.calls[0][1] as Record<string, unknown>;
+    expect(context['publicKey']).toBe('GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF');
+    expect(context['pubKey']).toBe('GABC...');
+    expect(context['signerPublicKey']).toBe('GDEF...');
+    expect(context['keypair']).toBe('kp-1');
+    expect(context['idempotencyKey']).toBe('idem-123');
+    expect((context['nested'] as Record<string, unknown>)['public_key']).toBe('GXYZ...');
+    expect((context['nested'] as Record<string, unknown>)['api_key']).toBe('[REDACTED]');
   });
 
   it('emits structured JSON with timestamp/scope/message/context', () => {

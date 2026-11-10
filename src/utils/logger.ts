@@ -17,25 +17,42 @@ function shouldLog(level: LogLevel, minLevel: LogLevel): boolean {
   return LOG_LEVEL_PRIORITY[level] >= LOG_LEVEL_PRIORITY[minLevel];
 }
 
+const SENSITIVE_SUBSTRINGS = [
+  'authorization',
+  'apikey',
+  'api_key',
+  'api-key',
+  'privatekey',
+  'private_key',
+  'private-key',
+  'secretkey',
+  'secret_key',
+  'secret-key',
+  'accesskey',
+  'access_key',
+  'access-key',
+  'signingkey',
+  'signing_key',
+  'signing-key',
+  'token',
+  'secret',
+  'password',
+];
+
+function isSensitiveFieldName(key: string): boolean {
+  const lowerKey = key.toLowerCase();
+  if (lowerKey === 'key') return true;
+  return SENSITIVE_SUBSTRINGS.some((k) => lowerKey.includes(k));
+}
+
 /** Redact sensitive fields from log context */
 function redactContext(context: unknown): unknown {
   if (!context || typeof context !== 'object') return context;
 
-  const sensitiveKeys = [
-    'authorization',
-    'apikey',
-    'api_key',
-    'apiKey',
-    'token',
-    'secret',
-    'password',
-    'key',
-  ];
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(context as Record<string, unknown>)) {
-    const lowerKey = key.toLowerCase();
-    if (sensitiveKeys.some((k) => lowerKey.includes(k))) {
+    if (isSensitiveFieldName(key)) {
       result[key] = '[REDACTED]';
     } else if (Array.isArray(value)) {
       // Preserve arrays by mapping each element through redactContext
