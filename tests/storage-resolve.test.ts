@@ -174,4 +174,40 @@ describe('IPFSStorage.resolve - Issue #348', () => {
     await expect(storage.resolve('invalid-cid')).rejects.toThrow(TrustFlowError);
     expect(getSpy).not.toHaveBeenCalled();
   });
+
+  it('bounds gateway response size via maxContentLength/maxBodyLength and falls back when a gateway exceeds maxContentBytes (#606)', async () => {
+    getSpy
+      .mockRejectedValueOnce(new Error('maxContentLength size of 128 exceeded'))
+      .mockResolvedValueOnce({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        data: 'x'.repeat(256), // oversized string payload even if transport did not abort
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        data: JSON.stringify(expectedData),
+      });
+
+    const storage = new IPFSStorage({
+      gateways: [
+        'https://gw1.example.com',
+        'https://gw2.example.com',
+        'https://gw3.example.com',
+      ],
+      maxContentBytes: 128,
+    });
+
+    const result = await storage.resolve<typeof expectedData>(cid);
+    expect(result).toEqual(expectedData);
+    expect(getSpy).toHaveBeenCalledTimes(3);
+    expect(getSpy).toHaveBeenNthCalledWith(
+      1,
+      `https://gw1.example.com/ipfs/${cid}`,
+      expect.objectContaining({
+        maxContentLength: 128,
+        maxBodyLength: 128,
+      }),
+    );
+  });
 });

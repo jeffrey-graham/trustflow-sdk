@@ -58,6 +58,8 @@ const DEFAULT_FALLBACK_GATEWAYS = [
   'https://cloudflare-ipfs.com/ipfs',
   'https://dweb.link/ipfs',
 ];
+/** Default maximum gateway response size for `resolve()` (10 MB). */
+export const DEFAULT_MAX_IPFS_CONTENT_BYTES = 10 * 1024 * 1024;
 
 /** Build consistent path-style gateway URLs for both uploads and reads. */
 function gatewayCidUrl(gateway: string, cid: string): string {
@@ -79,6 +81,12 @@ export interface IPFSConfig {
   gateways?: string[];
   /** Request timeout in milliseconds. Defaults to 10s. */
   timeoutMs?: number;
+  /**
+   * Maximum response size in bytes accepted from an IPFS gateway during `resolve()`.
+   * Defaults to {@link DEFAULT_MAX_IPFS_CONTENT_BYTES} (10 MB). Override per-instance
+   * here or per-call via {@link IPFSResolveOptions.maxContentBytes}.
+   */
+  maxContentBytes?: number;
   /**
    * Retry budget for upload requests. Defaults to 3 retries with a 250ms base
    * delay and a 2s cap.
@@ -107,6 +115,11 @@ export interface IPFSUploadResult {
 export interface IPFSResolveOptions {
   /** Request timeout in milliseconds for gateway resolution. */
   timeoutMs?: number;
+  /**
+   * Maximum response size in bytes accepted from an IPFS gateway for this call.
+   * Overrides {@link IPFSConfig.maxContentBytes} (default: 10 MB).
+   */
+  maxContentBytes?: number;
   /** Abort signal for cancelling the resolve request. */
   abortSignal?: AbortSignal;
 }
@@ -128,10 +141,12 @@ export class IPFSStorage {
   private readonly gateways: string[];
   private readonly http: AxiosInstance;
   private readonly timeoutMs: number;
+  private readonly maxContentBytes: number;
 
   constructor(config: IPFSConfig = {}) {
     this.gatewayUrl = config.gatewayUrl ?? DEFAULT_IPFS_GATEWAY;
     this.timeoutMs = config.timeoutMs ?? 10_000;
+    this.maxContentBytes = config.maxContentBytes ?? DEFAULT_MAX_IPFS_CONTENT_BYTES;
 
     if (config.gateways && config.gateways.length > 0) {
       this.gateways = [...config.gateways];
@@ -216,6 +231,7 @@ export class IPFSStorage {
 
     const errors: string[] = [];
     const timeout = options.timeoutMs ?? this.timeoutMs;
+    const maxContentBytes = options.maxContentBytes ?? this.maxContentBytes;
     const abortSignal = options.abortSignal;
 
     for (const gateway of this.gateways) {
@@ -226,6 +242,8 @@ export class IPFSStorage {
         const response = await axios.get(url, {
           timeout,
           signal: abortSignal,
+          maxContentLength: maxContentBytes,
+          maxBodyLength: maxContentBytes,
           responseType: 'text',
           transformResponse: [(d) => d],
           validateStatus: (status) => status >= 200 && status < 300,
@@ -249,6 +267,16 @@ export class IPFSStorage {
           (typeof rawBody === 'string' && rawBody.trim().length === 0)
         ) {
           const err = `Gateway ${cleanGateway} returned an empty body`;
+          logger.warn(err, { cid });
+          errors.push(err);
+          continue;
+        }
+
+        if (
+          typeof rawBody === 'string' &&
+          Buffer.byteLength(rawBody, 'utf8') > maxContentBytes
+        ) {
+          const err = `Gateway ${cleanGateway} response exceeded maxContentBytes (${maxContentBytes})`;
           logger.warn(err, { cid });
           errors.push(err);
           continue;
