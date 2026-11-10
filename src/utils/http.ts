@@ -138,6 +138,14 @@ export function isMethodRetryable(error: unknown): boolean {
  * @returns Whether to replay the request
  */
 export function shouldRetryRequest(error: unknown): boolean {
+  if (
+    axios.isCancel(error) ||
+    (error as { code?: unknown } | undefined)?.code === 'ERR_CANCELED' ||
+    (error as { name?: unknown } | undefined)?.name === 'AbortError' ||
+    (error as { name?: unknown } | undefined)?.name === 'CanceledError'
+  ) {
+    return false;
+  }
   if (!isMethodRetryable(error)) return false;
   const status = (error as { response?: { status?: number } }).response?.status;
   if (status === undefined) return true; // transport failure

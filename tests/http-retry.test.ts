@@ -74,6 +74,21 @@ describe('shouldRetryRequest', () => {
       ),
     ).toBe(true);
   });
+
+  it('never retries a cancelled request for either idempotent or non-idempotent methods (#610)', () => {
+    const canceledGet = new axios.CanceledError('Request aborted by caller');
+    (canceledGet as unknown as { config: Record<string, unknown> }).config = { method: 'get' };
+    expect(shouldRetryRequest(canceledGet)).toBe(false);
+
+    const canceledPost = new axios.CanceledError('Request aborted by caller');
+    (canceledPost as unknown as { config: Record<string, unknown> }).config = {
+      method: 'post',
+      trustflowRetry: true,
+    };
+    expect(shouldRetryRequest(canceledPost)).toBe(false);
+
+    expect(shouldRetryRequest({ code: 'ERR_CANCELED', config: { method: 'get' } })).toBe(false);
+  });
 });
 
 describe('apiRetryDelay', () => {
@@ -302,6 +317,17 @@ describe('installApiRetryInterceptor', () => {
 
     await expect(fail({ code: 'ECONNRESET', config })).resolves.toBeDefined();
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows a cancelled GET request immediately without sleeping or replaying (#610)', async () => {
+    const { fail, request } = harness({ retryDelayMs: 5000, maxRetryDelayMs: 5000 });
+    const canceled = new axios.CanceledError('aborted');
+    (canceled as unknown as { config: Record<string, unknown> }).config = { method: 'get' };
+
+    const start = Date.now();
+    await expect(fail(canceled)).rejects.toBe(canceled);
+    expect(Date.now() - start).toBeLessThan(200);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('rethrows when the failure carries no request config', async () => {
