@@ -1,5 +1,7 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import type { TrustFlowClient } from '../src/client';
+import { buildReleaseArgs } from '../src/contract/build';
+import * as invokeModule from '../src/contract/invoke';
 import { releaseEscrow } from '../src/escrow/release';
 import { TrustFlowError } from '../src/errors';
 import type { ReleaseEscrowParams } from '../src/types';
@@ -8,7 +10,15 @@ const CALLER = Keypair.random().publicKey();
 const client = {} as TrustFlowClient;
 
 describe('releaseEscrow', () => {
-  it('accepts ReleaseEscrowParams from the public top-level types module', async () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('encodes release arguments and invokes release_escrow on the contract', async () => {
+    const spy = jest
+      .spyOn(invokeModule, 'invokeContract')
+      .mockResolvedValue({ success: true, txHash: 'tx_release_onchain_999' });
+
     const params: ReleaseEscrowParams = {
       escrowId: 'escrow-1',
       caller: CALLER,
@@ -16,8 +26,25 @@ describe('releaseEscrow', () => {
 
     const txId = await releaseEscrow(client, params);
 
-    expect(typeof txId).toBe('string');
-    expect(txId.length).toBeGreaterThan(0);
+    expect(txId).toBe('tx_release_onchain_999');
+    expect(spy).toHaveBeenCalledWith(
+      client,
+      'release_escrow',
+      buildReleaseArgs('escrow-1', CALLER),
+      CALLER,
+    );
+  });
+
+  it('rejects with TrustFlowError when invokeContract fails', async () => {
+    jest.spyOn(invokeModule, 'invokeContract').mockResolvedValue({
+      success: false,
+      error: 'Simulation failed: caller not authorized',
+      code: 'SIMULATION_ERROR',
+    });
+
+    await expect(
+      releaseEscrow(client, { escrowId: 'escrow-1', caller: CALLER }),
+    ).rejects.toMatchObject({ code: 'SIMULATION_ERROR' });
   });
 
   it('rejects a missing escrowId with a validation error', async () => {
