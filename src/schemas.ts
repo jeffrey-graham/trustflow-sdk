@@ -152,6 +152,7 @@ export const ClientConfigSchema = z.object({
   network: NetworkSchema.default('TESTNET'),
   contractId: ContractIdSchema,
   rpcUrl: z.string().url('RPC URL must be a valid URL').optional(),
+  rpcHeaders: z.record(z.string()).optional(),
   rpcFailover: z
     .object({
       rpcUrls: z.array(z.string().url('RPC URL must be a valid URL')).min(1),

@@ -176,5 +176,24 @@ describe('exported Zod schemas', () => {
         false,
       );
     });
+
+    it('keeps and validates rpcHeaders instead of silently dropping them (#602)', () => {
+      const parsed = ClientConfigSchema.safeParse({
+        contractId: CONTRACT_ID,
+        rpcHeaders: { 'x-api-key': 'abc', 'x-trace-id': 'trace-1' },
+      });
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) return;
+      expect(parsed.data.rpcHeaders).toEqual({
+        'x-api-key': 'abc',
+        'x-trace-id': 'trace-1',
+      });
+
+      const invalid = ClientConfigSchema.safeParse({
+        contractId: CONTRACT_ID,
+        rpcHeaders: { 'x-api-key': 123 },
+      });
+      expect(invalid.success).toBe(false);
+    });
   });
 });
