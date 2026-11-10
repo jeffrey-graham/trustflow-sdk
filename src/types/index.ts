@@ -66,7 +66,9 @@ export interface Dispute {
 }
 
 /** Standard result envelope for SDK operations. */
-export type SDKResult<T> = { ok: true; data: T } | { ok: false; error: string };
+export type SDKResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: string; code?: string; aborted?: boolean };
 
 /**
  * Parameters for paginated gig listing (#24, #211, #235).

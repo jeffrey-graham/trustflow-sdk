@@ -174,4 +174,31 @@ describe('IPFSStorage.resolve - Issue #348', () => {
     await expect(storage.resolve('invalid-cid')).rejects.toThrow(TrustFlowError);
     expect(getSpy).not.toHaveBeenCalled();
   });
+
+  it('re-throws abort errors immediately without trying fallback gateways for pre-aborted and mid-request aborts (#608)', async () => {
+    const storage = new IPFSStorage({
+      gateways: ['https://gw1.example.com', 'https://gw2.example.com'],
+    });
+
+    // 1. Pre-aborted signal
+    const preController = new AbortController();
+    preController.abort(new Error('Caller cancelled before request'));
+    await expect(
+      storage.resolve(cid, { abortSignal: preController.signal }),
+    ).rejects.toThrow('Caller cancelled before request');
+    expect(getSpy).not.toHaveBeenCalled();
+
+    // 2. Aborted mid-request on primary gateway -> does not fall back to gw2
+    const midController = new AbortController();
+    getSpy.mockImplementationOnce(async (_url: string, cfg: { signal?: AbortSignal }) => {
+      expect(cfg.signal).toBe(midController.signal);
+      midController.abort();
+      throw new axios.CanceledError('canceled');
+    });
+
+    await expect(
+      storage.resolve(cid, { abortSignal: midController.signal }),
+    ).rejects.toThrow('canceled');
+    expect(getSpy).toHaveBeenCalledTimes(1);
+  });
 });

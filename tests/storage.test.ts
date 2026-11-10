@@ -208,6 +208,42 @@ describe('IPFSStorage.upload', () => {
     expect(storagePayload.data).toBe('ZGF0YQ==');
     expect(storagePayload.tag).toBe('dGFn');
   });
+
+  it('distinguishes abortSignal cancellation from network failure for pre-aborted and mid-request aborts (#608)', async () => {
+    const storage = new IPFSStorage();
+
+    // 1. Pre-aborted signal
+    const preController = new AbortController();
+    preController.abort();
+    const preResult = await storage.upload(Buffer.from('data'), {
+      abortSignal: preController.signal,
+    });
+    expect(preResult).toEqual({
+      ok: false,
+      error: 'Request aborted',
+      code: 'ABORTED',
+      aborted: true,
+    });
+    expect(mockHttpPost).not.toHaveBeenCalled();
+
+    // 2. Aborted mid-request
+    const midController = new AbortController();
+    mockHttpPost.mockImplementationOnce(async (_url: string, _body: unknown, cfg: { signal?: AbortSignal }) => {
+      expect(cfg.signal).toBe(midController.signal);
+      midController.abort();
+      throw new axios.CanceledError('canceled');
+    });
+
+    const midResult = await storage.upload(Buffer.from('data'), {
+      abortSignal: midController.signal,
+    });
+    expect(midResult).toEqual({
+      ok: false,
+      error: 'Request aborted',
+      code: 'ABORTED',
+      aborted: true,
+    });
+  });
 });
 
 describe('IPFSStorage encryption', () => {

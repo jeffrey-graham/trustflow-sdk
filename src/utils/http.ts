@@ -344,6 +344,14 @@ export function toApiErrorMessage(error: unknown): string {
   if (error instanceof TrustFlowError) {
     return error.message;
   }
+  if (
+    axios.isCancel(error) ||
+    (error as { code?: unknown } | undefined)?.code === 'ERR_CANCELED' ||
+    (error as { name?: unknown } | undefined)?.name === 'AbortError' ||
+    (error as { name?: unknown } | undefined)?.name === 'CanceledError'
+  ) {
+    return 'Request aborted';
+  }
   if (error instanceof AxiosError) {
     const status = error.response?.status;
     const statusText = error.response?.statusText;

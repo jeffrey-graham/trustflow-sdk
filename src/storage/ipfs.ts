@@ -171,6 +171,10 @@ export class IPFSStorage {
     const contentType =
       options.contentType || (isBlob ? (file as Blob).type : '') || 'application/octet-stream';
 
+    if (options.abortSignal?.aborted) {
+      return { ok: false, error: 'Request aborted', code: 'ABORTED', aborted: true };
+    }
+
     logger.debug('Uploading file to IPFS', { size, filename, contentType });
     try {
       const body = isBlob
@@ -193,6 +197,15 @@ export class IPFSStorage {
       logger.info('IPFS upload succeeded', { cid });
       return { ok: true, data: { cid, url: gatewayCidUrl(this.gatewayUrl, cid) } };
     } catch (err) {
+      if (
+        options.abortSignal?.aborted ||
+        axios.isCancel(err) ||
+        (err as { code?: unknown } | undefined)?.code === 'ERR_CANCELED' ||
+        (err as { name?: unknown } | undefined)?.name === 'AbortError' ||
+        (err as { name?: unknown } | undefined)?.name === 'CanceledError'
+      ) {
+        return { ok: false, error: 'Request aborted', code: 'ABORTED', aborted: true };
+      }
       logger.error('IPFS upload failed', { error: toApiErrorMessage(err) });
       return { ok: false, error: toApiErrorMessage(err) };
     }
@@ -217,6 +230,11 @@ export class IPFSStorage {
     const errors: string[] = [];
     const timeout = options.timeoutMs ?? this.timeoutMs;
     const abortSignal = options.abortSignal;
+
+    if (abortSignal?.aborted) {
+      const reason = (abortSignal as { reason?: unknown }).reason;
+      throw reason instanceof Error ? reason : new Error('Request aborted');
+    }
 
     for (const gateway of this.gateways) {
       const cleanGateway = gateway.replace(/\/+$/, '');
@@ -273,7 +291,13 @@ export class IPFSStorage {
         }
       } catch (reqError: any) {
         // Re-throw abort errors immediately so callers can distinguish cancellation from failure
-        if (abortSignal?.aborted) {
+        if (
+          abortSignal?.aborted ||
+          axios.isCancel(reqError) ||
+          reqError?.code === 'ERR_CANCELED' ||
+          reqError?.name === 'AbortError' ||
+          reqError?.name === 'CanceledError'
+        ) {
           const abortError = reqError instanceof Error ? reqError : new Error(String(reqError));
           throw abortError;
         }
