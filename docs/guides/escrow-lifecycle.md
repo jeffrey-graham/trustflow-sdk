@@ -80,7 +80,7 @@ import { config } from './config';
 // Primary escrow operations client
 const escrowClient = new TrustFlowEscrowClient(config, {
   timeoutMs: 15_000,
-  retry: { attempts: 3, baseDelayMs: 500, maxDelayMs: 3_000 },
+  retry: { retries: 3, retryDelayMs: 500, maxRetryDelayMs: 3_000 },
 });
 
 // General Soroban & account client
