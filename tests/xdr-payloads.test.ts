@@ -40,6 +40,13 @@ describe('contract argument XDR payloads', () => {
         args.forEach((value) => expect(value).toBeValidScVal());
     });
 
+    it('buildClaimArgs rejects empty or invalid escrowId and invalid claimant address', () => {
+        expect(() => buildClaimArgs('', ADDR_A)).toThrow(/escrowId/);
+        expect(() => buildClaimArgs('   ', ADDR_A)).toThrow(/escrowId/);
+        expect(() => buildClaimArgs('escrow/invalid', ADDR_A)).toThrow(/escrowId/);
+        expect(() => buildClaimArgs('escrow-1', 'not-a-valid-address')).toThrow(/claimant/);
+    });
+
     it('buildFundArgs returns XDR-decodable ScVal values without a token address', () => {
         const args = buildFundArgs('escrow-1', ADDR_A, 50_000_000n);
 
@@ -52,6 +59,16 @@ describe('contract argument XDR payloads', () => {
 
         expect(args).toHaveLength(4);
         args.forEach((value) => expect(value).toBeValidScVal());
+    });
+
+    it('buildFundArgs rejects empty or invalid escrowId, invalid funder, and invalid tokenAddress', () => {
+        expect(() => buildFundArgs('', ADDR_A, 50_000_000n)).toThrow(/escrowId/);
+        expect(() => buildFundArgs('escrow?bad', ADDR_A, 50_000_000n)).toThrow(/escrowId/);
+        expect(() => buildFundArgs('escrow-1', 'bad-funder', 50_000_000n)).toThrow(/funder/);
+        expect(() => buildFundArgs('escrow-1', ADDR_A, 50_000_000n, 'bad-token')).toThrow(
+            /tokenAddress/,
+        );
+        expect(() => buildFundArgs('escrow-1', ADDR_A, 50_000_000n, '')).toThrow(/tokenAddress/);
     });
 
     it('buildDisputeArgs returns XDR-decodable ScVal values', () => {

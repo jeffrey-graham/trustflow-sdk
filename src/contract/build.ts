@@ -1,7 +1,7 @@
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import type { CreateEscrowParams } from '../types';
 import type { VotePayload } from '../types/juror';
-import { assertStellarAddress, isValidEscrowId } from '../utils/validation';
+import { assertStellarAddress, isValidAddress, isValidEscrowId } from '../utils/validation';
 import { TrustFlowError } from '../errors';
 
 function assertEscrowId(escrowId: string): void {
@@ -82,6 +82,8 @@ export function buildReleaseArgs(escrowId: string, caller: string): unknown[] {
  * contract has already cleared for withdrawal.
  */
 export function buildClaimArgs(escrowId: string, claimant: string): unknown[] {
+  assertEscrowId(escrowId);
+  assertStellarAddress(claimant, 'claimant');
   return [nativeToScVal(escrowId, { type: 'string' }), new Address(claimant).toScVal()];
 }
 
@@ -100,6 +102,14 @@ export function buildFundArgs(
   amountStroops: bigint,
   tokenAddress?: string,
 ): unknown[] {
+  assertEscrowId(escrowId);
+  assertStellarAddress(funder, 'funder');
+  if (tokenAddress !== undefined && !isValidAddress(tokenAddress)) {
+    throw TrustFlowError.validation(
+      'tokenAddress',
+      `Invalid Stellar address for "tokenAddress": ${tokenAddress}`,
+    );
+  }
   const args: unknown[] = [
     nativeToScVal(escrowId, { type: 'string' }),
     new Address(funder).toScVal(),
