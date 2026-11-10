@@ -1,4 +1,7 @@
+import { randomBytes } from 'crypto';
 import { hash } from '@stellar/stellar-sdk';
+import { TrustFlowClient } from '../client';
+import { TrustFlowError } from '../errors';
 import type { ContractConfig } from '../types/contract';
 import type {
   CastVoteParams,
@@ -13,7 +16,9 @@ import type {
 export type { JurorClientOptions } from '../types/juror';
 import type { SDKResult } from '../types/index';
 
-import { buildVoteArgs } from '../contract/build';
+import { buildVoteArgs, buildRevealArgs } from '../contract/build';
+import { invokeContract } from '../contract/invoke';
+import { isValidEscrowId, isValidStellarAddress } from '../utils/validation';
 import { VoteSchema } from '../schemas';
 
 const VALID_CHOICES: VoteChoice[] = ['approve', 'reject', 'abstain'];
@@ -163,6 +168,19 @@ export class JurorClient {
     private readonly options: JurorClientOptions = {},
   ) {}
 
+  private getTrustFlowClient(): TrustFlowClient {
+    return new TrustFlowClient({
+      contractId: this.config.contractId,
+      network: this.config.network ?? 'TESTNET',
+      rpcUrl: this.config.rpcUrl,
+      networkPassphrase: this.config.networkPassphrase,
+      apiBaseUrl: this.config.apiBaseUrl,
+      apiKey: this.config.apiKey,
+      timeoutMs: this.config.timeoutMs,
+      rpcHeaders: this.config.rpcHeaders,
+    });
+  }
+
   /**
    * Constructs a vote commitment matching the contract hash_vote preimage layout:
    * `sha256(vote_byte ++ 32_byte_salt)`.
@@ -297,19 +315,31 @@ export class JurorClient {
     } catch (e) {
       return { ok: false, error: `Failed to encode vote arguments: ${String(e)}` };
     }
-    // Encoded ScVal args are ready for the shared tx-pipeline once wired to a
-    // live signer; this returns the prepared call metadata in the meantime.
-    void args;
 
-    return {
-      ok: true,
-      data: {
-        txHash: `vote-${this.config.contractId}-${params.disputeId}-${Date.now()}`,
-        disputeId: params.disputeId,
-        jurorAddress: params.jurorAddress,
-        encrypted: params.vote.encrypted,
-      },
-    };
+    try {
+      const res = await invokeContract(
+        this.getTrustFlowClient(),
+        'cast_vote',
+        args,
+        params.jurorAddress,
+      );
+      if (!res.success) {
+        return { ok: false, error: res.error || 'Failed to cast vote on contract' };
+      }
+
+      return {
+        ok: true,
+        data: {
+          txHash:
+            res.txHash ?? `vote-${this.config.contractId}-${params.disputeId}-${Date.now()}`,
+          disputeId: params.disputeId,
+          jurorAddress: params.jurorAddress,
+          encrypted: params.vote.encrypted,
+        },
+      };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   /**
@@ -390,16 +420,29 @@ export class JurorClient {
     } catch (e) {
       return { ok: false, error: `Failed to encode reveal arguments: ${String(e)}` };
     }
-    void args;
 
-    return {
-      ok: true,
-      data: {
-        txHash: `reveal-${this.config.contractId}-${p.disputeId}-${Date.now()}`,
-        disputeId: p.disputeId,
-        jurorAddress: p.jurorAddress,
-        voteForDepositor: p.voteForDepositor,
-      },
-    };
+    try {
+      const res = await invokeContract(
+        this.getTrustFlowClient(),
+        'reveal_vote',
+        args,
+        p.jurorAddress,
+      );
+      if (!res.success) {
+        return { ok: false, error: res.error || 'Failed to reveal vote on contract' };
+      }
+
+      return {
+        ok: true,
+        data: {
+          txHash: res.txHash ?? `reveal-${this.config.contractId}-${p.disputeId}-${Date.now()}`,
+          disputeId: p.disputeId,
+          jurorAddress: p.jurorAddress,
+          voteForDepositor: p.voteForDepositor,
+        },
+      };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 }
