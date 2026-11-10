@@ -109,6 +109,42 @@ describe('Strict CIDv0 and CIDv1 validation - Issue #349', () => {
       const corrupt = 'bafy' + 'a'.repeat(55);
       expect(isValidCid(corrupt)).toBe(false);
     });
+
+    it('rejects garbage CIDv1 base58btc strings that fail multicodec/multihash structural checks (#605)', () => {
+      // 0x01 version byte followed by 0xFF padding (invalid multicodec varint / multihash)
+      expect(isValidCid('zSSX8YzB3JHrjo6vdi3AMoi7zpc8f6DcGxmYpb6oWXDAsGJ2sQSQ7UGE')).toBe(
+        false,
+      );
+
+      // Fuzz-style check across malformed base58btc payloads (wrong digest length or sha2-256 != 32)
+      const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+      function encodeBase58(bytes: Uint8Array): string {
+        let num = 0n;
+        for (const b of bytes) num = num * 256n + BigInt(b);
+        let out = '';
+        while (num > 0n) {
+          const rem = Number(num % 58n);
+          out = BASE58_ALPHABET[rem] + out;
+          num = num / 58n;
+        }
+        for (let i = 0; i < bytes.length && bytes[i] === 0; i++) {
+          out = '1' + out;
+        }
+        return out;
+      }
+
+      for (let i = 0; i < 20; i++) {
+        // Version 0x01, multicodec 0x70, hashFunc 0x12 (sha2-256), declared len 16 (invalid for sha2-256), 30 payload bytes
+        const badBytes = new Uint8Array(34);
+        badBytes[0] = 0x01;
+        badBytes[1] = 0x70;
+        badBytes[2] = 0x12;
+        badBytes[3] = (i % 30) + 1; // never 32
+        badBytes.fill(i + 1, 4);
+        const cid = 'z' + encodeBase58(badBytes);
+        expect(isValidCid(cid)).toBe(false);
+      }
+    });
   });
 
   describe('Security and edge cases', () => {
