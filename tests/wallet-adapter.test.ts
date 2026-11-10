@@ -47,6 +47,40 @@ describe('createFreighterAdapter (#435)', () => {
     expect(signTransaction).toHaveBeenCalledWith('xdr', { network: 'TESTNET' });
     await expect(adapter.signMessage('hello')).resolves.toBe('sig');
   });
+
+  it('wraps user rejections and generic extension errors in TrustFlowError for sign and signMessage (#601)', async () => {
+    installFreighter({
+      getPublicKey: jest.fn().mockResolvedValue(PUBLIC_KEY),
+      getNetwork: jest.fn().mockResolvedValue('TESTNET'),
+      signTransaction: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('User declined access'))
+        .mockRejectedValueOnce(new Error('Hardware ledger disconnected')),
+      signMessage: jest
+        .fn()
+        .mockRejectedValueOnce({ code: -4, message: 'User rejected request' })
+        .mockRejectedValueOnce('unexpected extension crash'),
+    });
+    const adapter = createFreighterAdapter();
+
+    await expect(adapter.sign('xdr', 'TESTNET')).rejects.toMatchObject({
+      name: 'TrustFlowError',
+      code: 'USER_REJECTED',
+    });
+    await expect(adapter.sign('xdr', 'TESTNET')).rejects.toMatchObject({
+      name: 'TrustFlowError',
+      code: 'SIGNING_ERROR',
+    });
+
+    await expect(adapter.signMessage('hello')).rejects.toMatchObject({
+      name: 'TrustFlowError',
+      code: 'USER_REJECTED',
+    });
+    await expect(adapter.signMessage('hello')).rejects.toMatchObject({
+      name: 'TrustFlowError',
+      code: 'SIGNING_ERROR',
+    });
+  });
 });
 
 describe('MockWalletAdapter.asWalletAdapter (#435)', () => {

@@ -1,4 +1,5 @@
 import type { WalletAdapter } from './types';
+import { isWalletRejection } from './types';
 import { getFreighter } from './freighter';
 import { connectWallet, disconnectWallet } from './connect';
 import { TrustFlowError } from '../errors';
@@ -36,10 +37,36 @@ export function createFreighterAdapter(): WalletAdapter {
     isAvailable: async () => getFreighter() !== null,
     connect: () => connectWallet('freighter'),
     sign: async (xdr, network) => {
-      const { signedXDR } = await requireFreighter().signTransaction(xdr, { network });
-      return signedXDR;
+      const freighter = requireFreighter();
+      try {
+        const { signedXDR } = await freighter.signTransaction(xdr, { network });
+        return signedXDR;
+      } catch (e: unknown) {
+        if (isWalletRejection(e)) {
+          throw TrustFlowError.userRejected(
+            e instanceof Error ? e.message : 'User rejected Freighter signing',
+            e,
+          );
+        }
+        if (e instanceof TrustFlowError) throw e;
+        throw TrustFlowError.wrap(e, 'SIGNING_ERROR');
+      }
     },
-    signMessage: async (message) => requireFreighter().signMessage(message),
+    signMessage: async (message) => {
+      const freighter = requireFreighter();
+      try {
+        return await freighter.signMessage(message);
+      } catch (e: unknown) {
+        if (isWalletRejection(e)) {
+          throw TrustFlowError.userRejected(
+            e instanceof Error ? e.message : 'User rejected Freighter message signing',
+            e,
+          );
+        }
+        if (e instanceof TrustFlowError) throw e;
+        throw TrustFlowError.wrap(e, 'SIGNING_ERROR');
+      }
+    },
     disconnect: () => disconnectWallet(),
   };
 }
