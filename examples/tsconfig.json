@@ -8,7 +8,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
+    "ignoreDeprecations": "6.0",
     "types": ["node"],
+    "baseUrl": ".",
     "paths": {
       "@trustflow/sdk": ["../src/index.ts"],
       "@trustflow/sdk/escrow": ["../src/escrow/index.ts"],
