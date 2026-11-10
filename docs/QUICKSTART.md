@@ -296,7 +296,7 @@ const events = parseEvents(rawEvents, client.contractId);
 console.log('Parsed events:', events);
 
 const monitor = new EscrowMonitor();
-monitor.on('escrow.released', (event) => console.log('Escrow released:', event.escrowId));
+monitor.on('escrow_released', (event) => console.log('Escrow released:', event.data.escrowId));
 ```
 
 ---
