@@ -1,7 +1,9 @@
 import { disputeEscrow } from '../src/escrow/dispute';
 import { buildDisputeArgs } from '../src/contract/build';
+import * as invokeModule from '../src/contract/invoke';
 import { Address, nativeToScVal } from '@stellar/stellar-sdk';
 import { TrustFlowClient } from '../src/client';
+import { TrustFlowError } from '../src/errors';
 import { Keypair } from '@stellar/stellar-sdk';
 
 const CALLER = Keypair.random().publicKey();
@@ -9,14 +11,44 @@ const CALLER = Keypair.random().publicKey();
 describe('disputeEscrow', () => {
   const client = new TrustFlowClient({ contractId: 'CONTRACT123', network: 'TESTNET' });
 
-  it('raises a dispute for valid params', async () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('invokes dispute_escrow on the contract and returns the real txHash', async () => {
+    const spy = jest
+      .spyOn(invokeModule, 'invokeContract')
+      .mockResolvedValue({ success: true, txHash: 'tx_dispute_onchain_abc123' });
+
     const txHash = await disputeEscrow(client, {
       escrowId: 'esc-1',
       caller: CALLER,
       reason: 'Goods not delivered as described.',
     });
 
-    expect(txHash).toMatch(/^tx_dispute_esc-1_/);
+    expect(txHash).toBe('tx_dispute_onchain_abc123');
+    expect(spy).toHaveBeenCalledWith(
+      client,
+      'dispute_escrow',
+      buildDisputeArgs('esc-1', CALLER, 'Goods not delivered as described.'),
+      CALLER,
+    );
+  });
+
+  it('propagates contract invocation failures as TrustFlowError', async () => {
+    jest.spyOn(invokeModule, 'invokeContract').mockResolvedValue({
+      success: false,
+      error: 'Contract simulation reverted',
+      code: 'SIMULATION_ERROR',
+    });
+
+    await expect(
+      disputeEscrow(client, {
+        escrowId: 'esc-1',
+        caller: CALLER,
+        reason: 'Goods not delivered as described.',
+      }),
+    ).rejects.toThrow(TrustFlowError);
   });
 
   it('throws when escrowId is missing', async () => {

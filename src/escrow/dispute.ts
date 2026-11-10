@@ -4,6 +4,7 @@ import type { DisputeEscrowParams } from '../types';
 import { Dispute, DisputeParams, SDKResult } from '../types/index';
 import { TrustFlowError } from '../errors';
 import { buildDisputeArgs } from '../contract/build';
+import { invokeContract } from '../contract/invoke';
 import { createApiHttpClient, toApiErrorMessage } from '../utils/http';
 import type { ApiRetryConfig } from '../utils/http';
 import type { HttpInterceptors } from '../utils/interceptors';
@@ -38,7 +39,7 @@ import { isValidEscrowId } from '../utils/validation';
  * ```
  */
 export async function disputeEscrow(
-  _client: TrustFlowClient,
+  client: TrustFlowClient,
   params: DisputeEscrowParams,
 ): Promise<string> {
   if (!params.escrowId) {
@@ -50,12 +51,20 @@ export async function disputeEscrow(
   if (!params.reason || !params.reason.trim()) {
     throw TrustFlowError.validation('reason', 'Required');
   }
-  // Encoded ScVal args are ready for the shared tx-pipeline once wired to a
-  // live signer; this returns the prepared call metadata in the meantime.
   const args = buildDisputeArgs(params.escrowId, params.caller, params.reason);
-  void args;
-  // Soroban contract call: dispute(escrow_id, caller, reason)
-  return `tx_dispute_${params.escrowId}_${Date.now()}`;
+  const res = await invokeContract(client, 'dispute_escrow', args, params.caller);
+
+  if (!res.success) {
+    throw TrustFlowError.wrap(new Error(res.error || 'Escrow dispute failed'), res.code);
+  }
+
+  logger.info('Escrow disputed', {
+    escrowId: params.escrowId,
+    caller: params.caller,
+    txHash: res.txHash,
+  });
+
+  return res.txHash ?? `tx_dispute_${params.escrowId}_${Date.now()}`;
 }
 
 /** Constructor options for {@link DisputeClient}. */
