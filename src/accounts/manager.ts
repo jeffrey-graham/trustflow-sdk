@@ -199,6 +199,9 @@ export class AccountManager {
         createdAt: existing.createdAt,
         lastUsedAt: existing.lastUsedAt,
       });
+      if (merged.address !== existing.address && this.idByAddress.get(existing.address) === id) {
+        this.idByAddress.delete(existing.address);
+      }
       this.index(merged);
       this.emit({ type: 'updated', account: merged, previous: existing });
       this.activateIfRequested(id, input.activate);

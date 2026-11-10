@@ -447,4 +447,19 @@ describe('TrustFlowClient multi-account integration', () => {
     client.getAuthHeaders();
     expect(client.accounts.get(ALICE)?.lastUsedAt).toBeGreaterThan(0);
   });
+
+  it('removes the stale idByAddress entry when an existing id is re-registered with a new address (#600)', () => {
+    const mgr = new AccountManager();
+    mgr.add({ id: 'wallet-slot', address: ALICE });
+    expect(mgr.get(ALICE)?.address).toBe(ALICE);
+    expect(mgr.has(ALICE)).toBe(true);
+
+    mgr.add({ id: 'wallet-slot', address: BOB });
+
+    expect(mgr.get(ALICE)).toBeNull();
+    expect(mgr.has(ALICE)).toBe(false);
+    expect(() => mgr.require(ALICE)).toThrow();
+    expect(mgr.get(BOB)).toMatchObject({ id: 'wallet-slot', address: BOB });
+    expect(mgr.has(BOB)).toBe(true);
+  });
 });
